@@ -17,6 +17,7 @@ class MarkingApp:
         # Текущее состояние ввода
         self.current_set = None
         self.current_items = []
+        self.set_counter = 0     # сколько наборов уже начато
 
         # --- Верхняя панель: статус и подсказка ---
         self.status_var = tk.StringVar()
@@ -66,11 +67,15 @@ class MarkingApp:
     def update_status(self):
         note = f"  (сохраняются первые {self.CODE_LENGTH} символов)"
         if self.current_set is None:
-            self.status_var.set(f"Ожидается КОД НАБОРА{note}")
+            next_num = self.set_counter + 1
+            self.status_var.set(f"Ожидается КОД НАБОРА №{next_num}{note}")
             self.hint_var.set(f"После набора будет считано {self.ITEMS_PER_SET} кодов товаров")
         else:
             n = len(self.current_items) + 1
-            self.status_var.set(f"Набор: {self.current_set}  |  Ожидается ТОВАР {n} из {self.ITEMS_PER_SET}{note}")
+            self.status_var.set(
+                f"Набор №{self.set_counter}: {self.current_set}  "
+                f"|  Ожидается ТОВАР {n} из {self.ITEMS_PER_SET}{note}"
+            )
             self.hint_var.set("Сканируйте код товара, входящего в набор")
 
     def log_line(self, text):
@@ -92,9 +97,10 @@ class MarkingApp:
 
         if self.current_set is None:
             # Пришёл код набора
+            self.set_counter += 1
             self.current_set = code
             self.current_items = []
-            self.log_line(f"[НАБОР]  {code}")
+            self.log_line(f"[НАБОР №{self.set_counter}]  {code}")
         else:
             # Пришёл код товара
             self.current_items.append(code)
@@ -104,7 +110,10 @@ class MarkingApp:
                 # Набор укомплектован — сохраняем и начинаем новый
                 for item in self.current_items:
                     self.rows.append((item, self.current_set))
-                self.log_line(f"→ Набор {self.current_set} сохранён ({self.ITEMS_PER_SET} товара)\n")
+                self.log_line(
+                    f"→ Набор №{self.set_counter} {self.current_set} сохранён "
+                    f"({self.ITEMS_PER_SET} товара)\n"
+                )
                 self.current_set = None
                 self.current_items = []
 
@@ -116,8 +125,9 @@ class MarkingApp:
             removed = self.current_items.pop()
             self.log_line(f"[отмена] удалён товар {removed}")
         elif self.current_set is not None:
-            self.log_line(f"[отмена] удалён набор {self.current_set}")
+            self.log_line(f"[отмена] удалён набор №{self.set_counter} {self.current_set}")
             self.current_set = None
+            self.set_counter -= 1
         elif self.rows:
             item, setcode = self.rows.pop()
             self.current_set = setcode
@@ -132,6 +142,7 @@ class MarkingApp:
             self.rows.clear()
             self.current_set = None
             self.current_items = []
+            self.set_counter = 0
             self.log.configure(state="normal")
             self.log.delete("1.0", tk.END)
             self.log.configure(state="disabled")
