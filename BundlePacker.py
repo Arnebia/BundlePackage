@@ -202,6 +202,45 @@ class ResultWindow:
         tk.Button(btn_frame, text="Закрыть", width=15,
                   command=self.win.destroy).pack(side=tk.LEFT, padx=5)
 
+    def grouped_rows(self):
+        """Группирует строки по набору в порядке появления.
+        Возвращает список строк для CSV:
+        [ (код_набора, ""), (код_товара, код_набора), ... , (код_набора2, ""), ... ]
+        """
+        result = []
+        seen_order = []
+        groups = {}
+
+        for item, setcode in self.rows:
+            if setcode not in groups:
+                groups[setcode] = []
+                seen_order.append(setcode)
+            groups[setcode].append(item)
+
+        for setcode in seen_order:
+            # строка-заголовок набора: код в левой колонке, правая пустая
+            result.append((setcode, ""))
+            for item in groups[setcode]:
+                result.append((item, setcode))
+
+        return result
+
+
+#    def save_csv(self):
+#        path = filedialog.asksaveasfilename(
+#            defaultextension=".csv",
+#            filetypes=[("CSV", "*.csv")],
+#            initialfile="marking_result.csv"
+#        )
+#        if not path:
+#            return
+#        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+#            w = csv.writer(f, delimiter=";")
+#            w.writerow(["Код товара", "Код набора"])
+#            for item, setcode in self.rows:
+#                w.writerow([item, setcode])
+#        messagebox.showinfo("Сохранено", f"Файл сохранён:\n{path}")
+
     def save_csv(self):
         path = filedialog.asksaveasfilename(
             defaultextension=".csv",
@@ -212,9 +251,9 @@ class ResultWindow:
             return
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
-            w.writerow(["Код товара", "Код набора"])
-            for item, setcode in self.rows:
-                w.writerow([item, setcode])
+            w.writerow(["Код", "Код набора"])
+            for left, right in self.grouped_rows():
+                w.writerow([left, right])
         messagebox.showinfo("Сохранено", f"Файл сохранён:\n{path}")
 
     def save_tsv(self):
