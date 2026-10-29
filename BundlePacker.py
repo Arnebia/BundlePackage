@@ -252,8 +252,11 @@ class ResultWindow:
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             w.writerow(["Код", "Код набора"])
-            for left, right in self.grouped_rows():
-                w.writerow([left, right])
+            for item, setcode in self.rows:
+                w.writerow([item, setcode])
+#           Вариант с указанием в файле выгрузки сначала кода маркировки набора, а потом состава набора
+#            for left, right in self.grouped_rows():
+#                w.writerow([left, right])
         messagebox.showinfo("Сохранено", f"Файл сохранён:\n{path}")
 
     def save_tsv(self):

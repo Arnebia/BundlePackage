@@ -1,4 +1,4 @@
-('C:\\Users\\pdc\\Documents\\Project\\DataMatrix\\build\\BundlePacker\\PYZ-00.pyz',
+('C:\\Users\\pdc\\Documents\\Project\\BundlePackage\\build\\BundlePacker\\PYZ-00.pyz',
  [('__future__',
    'C:\\Users\\pdc\\AppData\\Local\\Programs\\Python\\Python315\\Lib\\__future__.py',
    'PYMODULE'),
