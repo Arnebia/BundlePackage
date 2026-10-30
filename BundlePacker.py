@@ -55,11 +55,26 @@ class MarkingApp:
         tk.Button(frame_btn, text="Завершить и показать таблицу", width=28,
                   command=self.finish).pack(side=tk.LEFT, padx=5)
 
-        # --- Журнал ввода (что уже отсканировано) ---
-        tk.Label(root, text="Журнал ввода:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10)
-        self.log = tk.Text(root, height=8, font=("Consolas", 10))
-        self.log.pack(fill=tk.X, padx=10, pady=5)
-        self.log.configure(state="disabled")
+#        # --- Журнал ввода (что уже отсканировано) ---
+#        tk.Label(root, text="Журнал ввода:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10)
+#        self.log = tk.Text(root, height=8, font=("Consolas", 10))
+#        self.log.pack(fill=tk.X, padx=10, pady=5)
+#        self.log.configure(state="disabled")
+
+        # --- Журнал ввода (растягивается до низа окна) ---
+        tk.Label(root, text="Журнал ввода:", font=("Segoe UI", 10, "bold")).pack(
+            anchor="w", padx=10
+        )
+
+        log_frame = tk.Frame(root)
+        log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
+
+        self.log = tk.Text(log_frame, height=1, font=("Consolas", 10))
+        log_vsb = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
+        self.log.configure(yscrollcommand=log_vsb.set, state="disabled")
+
+        self.log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        log_vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.update_status()
 
@@ -121,20 +136,39 @@ class MarkingApp:
 
     def undo_last(self):
         """Откатить последнее действие."""
+        # 1. Если есть недобранные товары в текущем наборе — убираем последний
         if self.current_items:
             removed = self.current_items.pop()
             self.log_line(f"[отмена] удалён товар {removed}")
+        # 2. Если набор начат, но товаров ещё нет — убираем набо
         elif self.current_set is not None:
             self.log_line(f"[отмена] удалён набор №{self.set_counter} {self.current_set}")
             self.current_set = None
+            self.current_items = []
             self.set_counter -= 1
+        # 3. Иначе откатываем последний сохранённый набор целиком
         elif self.rows:
-            item, setcode = self.rows.pop()
-            self.current_set = setcode
-            self.current_items = [item]  # вернёмся к состоянию до последнего товара
-            # Восстановим остальные товары этого набора, если они уже были
-            # (в текущей модели мы не храним их отдельно, поэтому просто оставим этот)
-            self.log_line(f"[отмена] возвращён к набору {setcode}")
+            # Собираем все товары последнего набора (они лежат подряд в rows)
+            last_set = self.rows[-1][1]
+            restored_items = []
+            while self.rows and self.rows[-1][1] == last_set:
+                item, _ = self.rows.pop()
+                restored_items.append(item)
+            restored_items.reverse()  # возвращаем исходный порядок
+
+            # Восстанавливаем состояние: набор «в работе», товары — все, кроме последнего
+            self.current_set = last_set
+            self.current_items = restored_items[:-1]  # последний товар «отменяем»
+            removed = restored_items[-1]
+            self.log_line(
+                f"[отмена] набор {last_set} возвращён в работу, "
+                f"удалён товар {removed}"
+            )
+            # set_counter не трогаем — набор уже был учтён
+
+        else:
+            self.log_line("[отмена] нечего отменять")
+
         self.update_status()
 
     def reset_all(self):
