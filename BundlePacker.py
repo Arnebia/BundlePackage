@@ -1,15 +1,54 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import csv
+import json
+import os
+import sys
 
-class MarkingApp:
+# ============================================================
+#  Версия программы — ЕДИНСТВЕННОЕ место, где её менять.
+#  При изменении APP_VERSION не забудьте пересобрать .exe
+#  (см. build.bat — он сам обновит version_info.txt).
+# ============================================================
+APP_NAME    = "BundlePackerApp"
+APP_TITLE   = "Сопоставление кодов маркировки"
+APP_VERSION = "1.1.5"
+
+# Версия СХЕМЫ state.json — отдельно от версии программы.
+# Поднимайте только при несовместимом изменении структуры JSON.
+STATE_FORMAT_VERSION = 1
+
+def get_state_file_path() -> str:
+    """Путь к файлу состояния в профиле пользователя (%APPDATA%/BundlePackerApp/state.json)."""
+    appdata = os.getenv("APPDATA")
+    if not appdata:
+        appdata = os.path.expanduser("~")
+    app_dir = os.path.join(appdata, "BundlePackerApp")
+    os.makedirs(app_dir, exist_ok=True)
+    return os.path.join(app_dir, "state.json")
+
+
+STATE_FILE = get_state_file_path()
+
+class BundlePackerApp:
     #ITEMS_PER_SET = 3  # сколько товаров в наборе
     CODE_LENGTH = 31   # сколько первых символов сохраняем
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Сопоставление кодов маркировки")
+        self.root.title(f"{APP_TITLE} v{APP_VERSION}")
         self.root.geometry("700x550")
+
+        # --- Установка иконки окна ---
+        # sys._MEIPASS существует только в собранном .exe
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
+        icon_path = os.path.join(base_path, "icon.ico")
+        try:
+            self.root.iconbitmap(icon_path)
+        except tk.TclError:
+            # Если файла нет — просто пропускаем (не роняем программу)
+            pass
+        # ----------------------------
 
         # Данные: список кортежей (код_товара, код_набора)
         self.rows = []
@@ -68,6 +107,8 @@ class MarkingApp:
                   command=self.reset_all).pack(side=tk.LEFT, padx=5)
         tk.Button(frame_btn, text="Завершить и показать таблицу", width=28,
                   command=self.finish).pack(side=tk.LEFT, padx=5)
+        tk.Button(frame_btn, text="О программе", width=15,
+                  command=self.show_about).pack(side=tk.LEFT, padx=5)
 
 #        # --- Журнал ввода (что уже отсканировано) ---
 #        tk.Label(root, text="Журнал ввода:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10)
@@ -91,6 +132,10 @@ class MarkingApp:
         log_vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
         self.update_status()
+
+        # --- Загрузка сохранённого состояния и обработчик закрытия ---
+        self.load_state()
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------- Логика ----------
     def update_status(self):
@@ -244,6 +289,150 @@ class MarkingApp:
         self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
         ResultWindow(self.root, self.rows)
 
+    # ---------- Сохранение / загрузка состояния ----------
+    def save_state(self):
+        """Сохранить состояние в JSON. Ошибки — в диалог, но не падать."""
+        state = {
+            "format_version": STATE_FORMAT_VERSION, 
+            "app_version": APP_VERSION,
+            "geometry": self.root.geometry(),
+            "items_per_set": self.items_per_set,
+            "code_length": self.CODE_LENGTH,
+            "set_counter": self.set_counter,
+            "current_set": self.current_set,
+            "current_items": self.current_items,
+            "rows": self.rows,
+        }
+        try:
+            with open(STATE_FILE, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            messagebox.showwarning(
+                "Не удалось сохранить состояние",
+                f"{STATE_FILE}\n\n{e}"
+            )
+
+    def load_state(self):
+        """Загрузить состояние из JSON. Если файла нет — тихо выходим."""
+        if not os.path.exists(STATE_FILE):
+            return
+        try:
+            with open(STATE_FILE, "r", encoding="utf-8") as f:
+                state = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            messagebox.showwarning(
+                "Не удалось загрузить состояние",
+                f"{STATE_FILE}\n\n{e}\n\nБудут использованы настройки по умолчанию."
+            )
+            return
+
+        # --- проверка совместимости формата ---
+        fmt = int(state.get("format_version", 1))
+        if fmt > STATE_FORMAT_VERSION:
+            if not messagebox.askyesno(
+                "Несовместимый формат состояния",
+                f"Файл состояния создан более новой версией программы\n"
+                f"(формат {fmt}, поддерживается до {STATE_FORMAT_VERSION}).\n\n"
+                f"Продолжить загрузку? Часть данных может быть потеряна."
+            ):
+                return
+
+        # --- геометрия окна ---
+        geom = state.get("geometry")
+        if geom:
+            try:
+                self.root.geometry(geom)
+            except tk.TclError:
+                pass
+
+        # --- количество товаров в наборе ---
+        ips = state.get("items_per_set", 3)
+        if isinstance(ips, int) and 1 <= ips <= 100:
+            self.items_per_set = ips
+        self.items_var.set(self.items_per_set)
+
+        # --- длина кода ---
+        cl = state.get("code_length", self.CODE_LENGTH)
+        if isinstance(cl, int) and cl > 0:
+            self.CODE_LENGTH = cl
+
+        # --- счётчик и текущий набор ---
+        self.set_counter = int(state.get("set_counter", 0))
+
+        cur_set = state.get("current_set")
+        if isinstance(cur_set, str) and cur_set:
+            self.current_set = cur_set
+        else:
+            self.current_set = None
+
+        cur_items = state.get("current_items") or []
+        if isinstance(cur_items, list):
+            self.current_items = [str(x) for x in cur_items]
+        else:
+            self.current_items = []
+
+        # --- сохранённые строки ---
+        rows = state.get("rows") or []
+        self.rows = []
+        for entry in rows:
+            if isinstance(entry, (list, tuple)) and len(entry) == 2:
+                self.rows.append((str(entry[0]), str(entry[1])))
+
+        # --- перерисовать журнал и синхронизировать UI ---
+        self.rebuild_log()
+        self.sync_items_spin()
+        self.update_status()
+
+    def rebuild_log(self):
+        """Восстановить содержимое журнала по текущему состоянию."""
+        self.log.configure(state="normal")
+        self.log.delete("1.0", tk.END)
+
+        # сохранённые наборы — группируем по коду набора, сохраняя порядок
+        if self.rows:
+            seen = []
+            groups = {}
+            for item, setcode in self.rows:
+                if setcode not in groups:
+                    groups[setcode] = []
+                    seen.append(setcode)
+                groups[setcode].append(item)
+            for idx, setcode in enumerate(seen, start=1):
+                self.log.insert(tk.END, f"[НАБОР №{idx}]  {setcode}\n")
+                for item in groups[setcode]:
+                    self.log.insert(tk.END, f"   [ТОВАР] {item}\n")
+                self.log.insert(tk.END, "→ сохранён\n")
+
+        # текущий (незавершённый) набор
+        if self.current_set is not None:
+            self.log.insert(
+                tk.END,
+                f"[НАБОР №{self.set_counter}]  {self.current_set}  "
+                f"(в работе)\n"
+            )
+            for i, item in enumerate(self.current_items, start=1):
+                self.log.insert(tk.END, f"   [ТОВАР {i}] {item}\n")
+
+        self.log.configure(state="disabled")
+        self.log.see(tk.END)
+
+    def on_close(self):
+        """Сохранить состояние и закрыть окно."""
+        self.save_state()
+        self.root.destroy()
+
+    def show_about(self):
+        """Окно «О программе» — версия и путь к state.json."""
+        messagebox.showinfo(
+            f"О программе — {APP_NAME}",
+            f"{APP_TITLE}\n\n"
+            f"Версия программы: {APP_VERSION}\n"
+            f"Формат файла состояния: {STATE_FORMAT_VERSION}\n\n"
+            f"Файл состояния:\n{STATE_FILE}\n\n"
+            f"Python: {sys.version.split()[0]}\n"
+            f"Платформа: {sys.platform}"
+        )
+
 
 class ResultWindow:
     def __init__(self, parent, rows):
@@ -358,5 +547,5 @@ class ResultWindow:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = MarkingApp(root)
+    app = BundlePackerApp(root)
     root.mainloop()
