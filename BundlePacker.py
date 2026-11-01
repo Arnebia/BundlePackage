@@ -3,7 +3,7 @@ from tkinter import ttk, messagebox, filedialog
 import csv
 
 class MarkingApp:
-    ITEMS_PER_SET = 3  # сколько товаров в наборе
+    #ITEMS_PER_SET = 3  # сколько товаров в наборе
     CODE_LENGTH = 31   # сколько первых символов сохраняем
 
     def __init__(self, root):
@@ -18,6 +18,7 @@ class MarkingApp:
         self.current_set = None
         self.current_items = []
         self.set_counter = 0     # сколько наборов уже начато
+        self.items_per_set = 3   # кол-во товаров в наборе по умолчанию
 
         # --- Верхняя панель: статус и подсказка ---
         self.status_var = tk.StringVar()
@@ -37,6 +38,19 @@ class MarkingApp:
         # --- Поле ввода ---
         frame_input = tk.Frame(root)
         frame_input.pack(pady=10)
+
+        tk.Label(frame_input, text="Товаров в наборе:", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(0, 4))
+        self.items_var = tk.IntVar(value=self.items_per_set)
+        self.items_spin = tk.Spinbox(
+            frame_input, from_=1, to=100, width=4,
+            textvariable=self.items_var,
+            font=("Segoe UI", 11),
+            command=self.on_items_changed,
+        )
+        self.items_spin.pack(side=tk.LEFT, padx=(0, 15))
+        # при ручном вводе в Spinbox command не всегда срабатывает — ловим по фокусу/Enter
+        self.items_spin.bind("<FocusOut>", lambda e: self.on_items_changed())
+        self.items_spin.bind("<Return>",   lambda e: self.on_items_changed())
 
         tk.Label(frame_input, text="Сканируйте код:", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=5)
         self.entry = tk.Entry(frame_input, font=("Consolas", 12), width=40)
@@ -84,20 +98,43 @@ class MarkingApp:
         if self.current_set is None:
             next_num = self.set_counter + 1
             self.status_var.set(f"Ожидается КОД НАБОРА №{next_num}{note}")
-            self.hint_var.set(f"После набора будет считано {self.ITEMS_PER_SET} кодов товаров")
+            self.hint_var.set(f"После набора будет считано {self.items_per_set} кодов товаров")
         else:
             n = len(self.current_items) + 1
             self.status_var.set(
                 f"Набор №{self.set_counter}: {self.current_set}  "
-                f"|  Ожидается ТОВАР {n} из {self.ITEMS_PER_SET}{note}"
+                f"|  Ожидается ТОВАР {n} из {self.items_per_set}{note}"
             )
             self.hint_var.set("Сканируйте код товара, входящего в набор")
+
+    def sync_items_spin(self):
+        """Spinbox доступен только когда текущий набор не начат."""
+        if self.current_set is None:
+            self.items_spin.configure(state="normal")
+        else:
+            self.items_spin.configure(state="disabled")
 
     def log_line(self, text):
         self.log.configure(state="normal")
         self.log.insert(tk.END, text + "\n")
         self.log.see(tk.END)
         self.log.configure(state="disabled")
+
+    def on_items_changed(self):
+        """Пользователь поменял количество товаров в наборе."""
+        if self.current_set is not None:
+            # страховка: в норме сюда не попадём — Spinbox disabled
+            self.items_var.set(self.items_per_set)
+            return
+
+        try:
+            value = int(self.items_var.get())
+        except (tk.TclError, ValueError):
+            value = self.items_per_set
+        value = max(1, min(100, value))
+        self.items_per_set = value
+        self.items_var.set(value)
+        self.update_status()
 
     def on_enter(self, event=None):
         code = self.entry.get().strip()
@@ -121,17 +158,18 @@ class MarkingApp:
             self.current_items.append(code)
             self.log_line(f"   [ТОВАР {len(self.current_items)}] {code}")
 
-            if len(self.current_items) >= self.ITEMS_PER_SET:
+            if len(self.current_items) >= self.items_per_set:
                 # Набор укомплектован — сохраняем и начинаем новый
                 for item in self.current_items:
                     self.rows.append((item, self.current_set))
                 self.log_line(
                     f"→ Набор №{self.set_counter} {self.current_set} сохранён "
-                    f"({self.ITEMS_PER_SET} товара)\n"
+                    f"({self.items_per_set} товара)\n"
                 )
                 self.current_set = None
                 self.current_items = []
 
+        self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
         self.update_status()
 
     def undo_last(self):
@@ -169,6 +207,7 @@ class MarkingApp:
         else:
             self.log_line("[отмена] нечего отменять")
 
+        self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
         self.update_status()
 
     def reset_all(self):
@@ -177,9 +216,13 @@ class MarkingApp:
             self.current_set = None
             self.current_items = []
             self.set_counter = 0
+#            self.items_per_set = 3
+#            self.items_var.set(3)
             self.log.configure(state="normal")
             self.log.delete("1.0", tk.END)
             self.log.configure(state="disabled")
+
+            self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
             self.update_status()
 
     def finish(self):
@@ -190,10 +233,15 @@ class MarkingApp:
             if not messagebox.askyesno(
                 "Незавершённый набор",
                 f"Набор {self.current_set} не укомплектован "
-                f"({len(self.current_items)} из {self.ITEMS_PER_SET}).\n"
+                f"({len(self.current_items)} из {self.items_per_set}).\n"
                 f"Продолжить вывод таблицы без него?"
             ):
                 return
+            # пользователь согласился «выбросить» недобранный набор
+            self.current_set = None
+            self.current_items = []
+
+        self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
         ResultWindow(self.root, self.rows)
 
 
