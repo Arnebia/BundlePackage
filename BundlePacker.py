@@ -14,6 +14,13 @@ APP_NAME    = "BundlePackerApp"
 APP_TITLE   = "Сопоставление кодов маркировки"
 APP_VERSION = "1.1.5"
 
+FONT_UI_BOLD  = ("Segoe UI", 10, "bold")
+FONT_MONO_BIG = ("Consolas", 12)
+COLOR_PRIMARY     = "#004080"   # акцент (заголовок статуса)
+COLOR_HINT        = "#667085"   # подсказки
+COLOR_SUCCESS     = "#0a7d32"   # «сохранено»
+COLOR_WARNING     = "#b54708"   # «отмена»
+
 # Версия СХЕМЫ state.json — отдельно от версии программы.
 # Поднимайте только при несовместимом изменении структуры JSON.
 STATE_FORMAT_VERSION = 1
@@ -125,6 +132,12 @@ class BundlePackerApp:
         log_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
 
         self.log = tk.Text(log_frame, height=1, font=("Consolas", 10))
+        self.log.tag_configure("set",     foreground=COLOR_PRIMARY, font=FONT_MONO_BIG)
+        self.log.tag_configure("item",    foreground="#222222")
+        self.log.tag_configure("success", foreground=COLOR_SUCCESS, font=FONT_UI_BOLD)
+        self.log.tag_configure("undo",    foreground=COLOR_WARNING)
+        self.log.tag_configure("hint",    foreground=COLOR_HINT, font=("Segoe UI", 9, "italic"))
+
         log_vsb = ttk.Scrollbar(log_frame, orient="vertical", command=self.log.yview)
         self.log.configure(yscrollcommand=log_vsb.set, state="disabled")
 
@@ -139,7 +152,7 @@ class BundlePackerApp:
 
     # ---------- Логика ----------
     def update_status(self):
-        note = f"  (сохраняются первые {self.CODE_LENGTH} символов)"
+        note = f" DataMatrix({self.CODE_LENGTH})"
         if self.current_set is None:
             next_num = self.set_counter + 1
             self.status_var.set(f"Ожидается КОД НАБОРА №{next_num}{note}")
@@ -147,7 +160,8 @@ class BundlePackerApp:
         else:
             n = len(self.current_items) + 1
             self.status_var.set(
-                f"Набор №{self.set_counter}: {self.current_set}  "
+                f"Набор №{self.set_counter} "
+#                f"Набор №{self.set_counter}: {self.current_set}  "
                 f"|  Ожидается ТОВАР {n} из {self.items_per_set}{note}"
             )
             self.hint_var.set("Сканируйте код товара, входящего в набор")
@@ -159,9 +173,12 @@ class BundlePackerApp:
         else:
             self.items_spin.configure(state="disabled")
 
-    def log_line(self, text):
+    def log_line(self, text, tag=None):
         self.log.configure(state="normal")
-        self.log.insert(tk.END, text + "\n")
+        if tag:
+            self.log.insert(tk.END, text + "\n", tag)
+        else:
+            self.log.insert(tk.END, text + "\n")
         self.log.see(tk.END)
         self.log.configure(state="disabled")
 
@@ -197,11 +214,11 @@ class BundlePackerApp:
             self.set_counter += 1
             self.current_set = code
             self.current_items = []
-            self.log_line(f"[НАБОР №{self.set_counter}]  {code}")
+            self.log_line(f"[НАБОР №{self.set_counter}]  {code}", tag="set")
         else:
             # Пришёл код товара
             self.current_items.append(code)
-            self.log_line(f"   [ТОВАР {len(self.current_items)}] {code}")
+            self.log_line(f"   [ТОВАР {len(self.current_items)}] {code}", tag="item")
 
             if len(self.current_items) >= self.items_per_set:
                 # Набор укомплектован — сохраняем и начинаем новый
@@ -209,7 +226,7 @@ class BundlePackerApp:
                     self.rows.append((item, self.current_set))
                 self.log_line(
                     f"→ Набор №{self.set_counter} {self.current_set} сохранён "
-                    f"({self.items_per_set} товара)\n"
+                    f"({self.items_per_set} товара)\n", tag="success"
                 )
                 self.current_set = None
                 self.current_items = []
@@ -222,7 +239,7 @@ class BundlePackerApp:
         # 1. Если есть недобранные товары в текущем наборе — убираем последний
         if self.current_items:
             removed = self.current_items.pop()
-            self.log_line(f"[отмена] удалён товар {removed}")
+            self.log_line(f"[отмена] удалён товар {removed}", tag="undo")
         # 2. Если набор начат, но товаров ещё нет — убираем набо
         elif self.current_set is not None:
             self.log_line(f"[отмена] удалён набор №{self.set_counter} {self.current_set}")
@@ -245,7 +262,7 @@ class BundlePackerApp:
             removed = restored_items[-1]
             self.log_line(
                 f"[отмена] набор {last_set} возвращён в работу, "
-                f"удалён товар {removed}"
+                f"удалён товар {removed}", tag="undo"
             )
             # set_counter не трогаем — набор уже был учтён
 
@@ -398,20 +415,20 @@ class BundlePackerApp:
                     seen.append(setcode)
                 groups[setcode].append(item)
             for idx, setcode in enumerate(seen, start=1):
-                self.log.insert(tk.END, f"[НАБОР №{idx}]  {setcode}\n")
+                self.log.insert(tk.END, f"[НАБОР №{idx}]  {setcode}\n", "set")
                 for item in groups[setcode]:
-                    self.log.insert(tk.END, f"   [ТОВАР] {item}\n")
-                self.log.insert(tk.END, "→ сохранён\n")
+                    self.log.insert(tk.END, f"   [ТОВАР] {item}\n", "item")
+                self.log.insert(tk.END, "→ сохранён\n", "success")
 
         # текущий (незавершённый) набор
         if self.current_set is not None:
             self.log.insert(
                 tk.END,
                 f"[НАБОР №{self.set_counter}]  {self.current_set}  "
-                f"(в работе)\n"
+                f"(в работе)\n", "set"
             )
             for i, item in enumerate(self.current_items, start=1):
-                self.log.insert(tk.END, f"   [ТОВАР {i}] {item}\n")
+                self.log.insert(tk.END, f"   [ТОВАР {i}] {item}\n", "item")
 
         self.log.configure(state="disabled")
         self.log.see(tk.END)
