@@ -1,5 +1,4 @@
 build/
-dist/
 version_info.txt
 *.spec.bak
 __pycache__/
