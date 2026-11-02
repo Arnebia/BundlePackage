@@ -12,18 +12,18 @@ import sys
 # ============================================================
 APP_NAME    = "BundlePackerApp"
 APP_TITLE   = "Сопоставление кодов маркировки"
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.2.5"
 
 FONT_UI_BOLD  = ("Segoe UI", 10, "bold")
 FONT_MONO_BIG = ("Consolas", 12)
 COLOR_PRIMARY     = "#004080"   # акцент (заголовок статуса)
 COLOR_HINT        = "#667085"   # подсказки
-COLOR_SUCCESS     = "#0a7d32"   # «сохранено»
-COLOR_WARNING     = "#b54708"   # «отмена»
+COLOR_SUCCESS     = "#0a7d32"   # сохранено
+COLOR_WARNING     = "#b54708"   # отмена
 
 # Версия СХЕМЫ state.json — отдельно от версии программы.
 # Поднимайте только при несовместимом изменении структуры JSON.
-STATE_FORMAT_VERSION = 1
+STATE_FORMAT_VERSION = 2
 
 def get_state_file_path() -> str:
     """Путь к файлу состояния в профиле пользователя (%APPDATA%/BundlePackerApp/state.json)."""
@@ -63,8 +63,9 @@ class BundlePackerApp:
         # Текущее состояние ввода
         self.current_set = None
         self.current_items = []
-        self.set_counter = 0     # сколько наборов уже начато
-        self.items_per_set = 3   # кол-во товаров в наборе по умолчанию
+        self.set_counter = 0           # сколько наборов уже начато
+        self.items_per_set = 3         # кол-во товаров в наборе (по умолчанию 3)
+        self.check_duplicates = True   # настройка проверки дубликатов (по умолчанию включено)
 
         # --- Верхняя панель: статус и подсказка ---
         self.status_var = tk.StringVar()
@@ -148,6 +149,10 @@ class BundlePackerApp:
 
         # --- Загрузка сохранённого состояния и обработчик закрытия ---
         self.load_state()
+
+        # --- Меню (после загрузки, чтобы чекбокс отражал сохранённое значение) ---
+        self._build_menu()
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------- Логика ----------
@@ -165,6 +170,28 @@ class BundlePackerApp:
                 f"|  Ожидается ТОВАР {n} из {self.items_per_set}{note}"
             )
             self.hint_var.set("Сканируйте код товара, входящего в набор")
+
+    def _build_menu(self):
+        """Меню в заголовке окна: Настройки → Проверять дубликаты."""
+        menubar = tk.Menu(self.root)
+
+        settings_menu = tk.Menu(menubar, tearoff=0)
+        self.dup_var = tk.BooleanVar(value=self.check_duplicates)
+        settings_menu.add_checkbutton(
+            label="Проверять дубликаты кодов",
+            variable=self.dup_var,
+            command=self.on_toggle_duplicates,
+        )
+        menubar.add_cascade(label="Настройки", menu=settings_menu)
+
+        self.root.config(menu=menubar)
+
+    def on_toggle_duplicates(self):
+        """Переключение настройки проверки дубликатов."""
+        self.check_duplicates = bool(self.dup_var.get())
+        state = "включена" if self.check_duplicates else "отключена"
+        self.log_line(f"[настройка] проверка дубликатов {state}", tag="hint")
+        self.save_state()
 
     def sync_items_spin(self):
         """Spinbox доступен только когда текущий набор не начат."""
@@ -198,6 +225,19 @@ class BundlePackerApp:
         self.items_var.set(value)
         self.update_status()
 
+    def _is_duplicate_code(self, code: str) -> bool:
+        """True, если code уже встречался как код набора или код товара."""
+        # сохранённые пары (товар, набор)
+        for item, setcode in self.rows:
+            if code == item or code == setcode:
+                return True
+        # текущий незавершённый набор
+        if self.current_set is not None and code == self.current_set:
+            return True
+        if code in self.current_items:
+            return True
+        return False
+ 
     def on_enter(self, event=None):
         code = self.entry.get().strip()
         self.entry.delete(0, tk.END)
@@ -208,6 +248,21 @@ class BundlePackerApp:
         if len(code) > self.CODE_LENGTH:
             code = code[:self.CODE_LENGTH]
         # ---------------------------------------------
+
+        # --- проверка дубликатов ---
+        if self.check_duplicates and self._is_duplicate_code(code):
+            self.log_line(
+                f"[ДУБЛИКАТ] код уже введён ранее: {code}", tag="undo"
+            )
+            messagebox.showwarning(
+                "Дубликат кода",
+                f"Код уже был введён ранее:\n\n{code}\n\n"
+                f"Повторный ввод не допускается."
+            )
+            self.entry.focus_set()
+            return
+        # ---------------------------------------------
+
 
         if self.current_set is None:
             # Пришёл код набора
@@ -315,6 +370,7 @@ class BundlePackerApp:
             "geometry": self.root.geometry(),
             "items_per_set": self.items_per_set,
             "code_length": self.CODE_LENGTH,
+            "check_duplicates": self.check_duplicates,
             "set_counter": self.set_counter,
             "current_set": self.current_set,
             "current_items": self.current_items,
@@ -394,6 +450,12 @@ class BundlePackerApp:
         for entry in rows:
             if isinstance(entry, (list, tuple)) and len(entry) == 2:
                 self.rows.append((str(entry[0]), str(entry[1])))
+
+        # --- проверка дубликатов ---
+        cd = state.get("check_duplicates", True)
+        self.check_duplicates = bool(cd)
+        if hasattr(self, "dup_var"):
+            self.dup_var.set(self.check_duplicates)
 
         # --- перерисовать журнал и синхронизировать UI ---
         self.rebuild_log()
