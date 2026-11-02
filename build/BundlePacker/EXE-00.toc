@@ -3,7 +3,7 @@
  False,
  False,
  ['C:\\Users\\pdc\\Documents\\Project\\DataMatrix\\icon.ico'],
- versioninfo.VSVersionInfo(ffi=versioninfo.FixedFileInfo(filevers=(1, 1, 5, 0), prodvers=(1, 1, 5, 0), mask=0x3f, flags=0x0, OS=0x40004, fileType=1, subtype=0x0, date=(0, 0)), kids=[versioninfo.StringFileInfo([versioninfo.StringTable('040904B0', [versioninfo.StringStruct('CompanyName', 'KoMMeK'), versioninfo.StringStruct('FileDescription', 'Сопоставление кодов маркировки'), versioninfo.StringStruct('FileVersion', '1.1.5.0'), versioninfo.StringStruct('InternalName', 'BundlePacker'), versioninfo.StringStruct('OriginalFilename', 'BundlePacker.exe'), versioninfo.StringStruct('ProductName', 'BundlePacker'), versioninfo.StringStruct('ProductVersion', '1.1.5.0')])]), versioninfo.VarFileInfo([versioninfo.VarStruct('Translation', [1033, 1200])])]),
+ versioninfo.VSVersionInfo(ffi=versioninfo.FixedFileInfo(filevers=(1, 2, 7, 0), prodvers=(1, 2, 7, 0), mask=0x3f, flags=0x0, OS=0x40004, fileType=1, subtype=0x0, date=(0, 0)), kids=[versioninfo.StringFileInfo([versioninfo.StringTable('040904B0', [versioninfo.StringStruct('CompanyName', 'KoMMeK'), versioninfo.StringStruct('FileDescription', 'Сопоставление кодов маркировки'), versioninfo.StringStruct('FileVersion', '1.2.7.0'), versioninfo.StringStruct('InternalName', 'BundlePacker'), versioninfo.StringStruct('OriginalFilename', 'BundlePacker.exe'), versioninfo.StringStruct('ProductName', 'BundlePacker'), versioninfo.StringStruct('ProductVersion', '1.2.7.0')])]), versioninfo.VarFileInfo([versioninfo.VarStruct('Translation', [1033, 1200])])]),
  False,
  False,
  b'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<assembly xmlns='
@@ -124,7 +124,7 @@
  [],
  False,
  False,
- 1793551313,
+ 1793629062,
  [('runw.exe',
    'C:\\Users\\pdc\\AppData\\Local\\Programs\\Python\\Python315\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

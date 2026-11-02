@@ -12,7 +12,7 @@ import sys
 # ============================================================
 APP_NAME    = "BundlePackerApp"
 APP_TITLE   = "Сопоставление кодов маркировки"
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 
 FONT_UI_BOLD  = ("Segoe UI", 10, "bold")
 FONT_MONO_BIG = ("Consolas", 12)
@@ -158,6 +158,21 @@ class BundlePackerApp:
         self.log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         log_vsb.pack(side=tk.RIGHT, fill=tk.Y)
 
+        # --- Статусная строка внизу окна ---
+        status_bar = tk.Frame(root, relief=tk.SUNKEN, bd=1)
+        status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+
+        self.status_bar_var = tk.StringVar()
+        self.status_bar_label = tk.Label(
+            status_bar,
+            textvariable=self.status_bar_var,
+            anchor="w",
+            font=("Segoe UI", 9),
+            fg=COLOR_HINT,
+            padx=8, pady=2,
+        )
+        self.status_bar_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
         self.update_status()
 
         # --- Загрузка сохранённого состояния и обработчик закрытия ---
@@ -183,6 +198,25 @@ class BundlePackerApp:
                 f"|  Ожидается ТОВАР {n} из {self.items_per_set}{note}"
             )
             self.hint_var.set("Сканируйте код товара, входящего в набор")
+        if hasattr(self, "status_bar_var"):
+            self.update_status_bar()
+
+    def update_status_bar(self):
+        """Обновить нижнюю статусную строку: счётчики наборов и товаров."""
+        saved_sets = len({setcode for _, setcode in self.rows})
+        saved_items = len(self.rows)
+        current = 1 if self.current_set is not None else 0
+
+        text = (
+            f"Создано наборов: {saved_sets}   |   "
+            f"Сохранено товаров: {saved_items}"
+        )
+        if current:
+            text += (
+                f"   |   В работе: набор №{self.set_counter} "
+                f"({len(self.current_items)}/{self.items_per_set})"
+            )
+        self.status_bar_var.set(text)
 
     def _build_menu(self):
         """Меню в заголовке окна: Настройки → ..., Справка → О программе."""
@@ -531,7 +565,8 @@ class BundlePackerApp:
             f"Формат файла состояния: {STATE_FORMAT_VERSION}\n\n"
             f"Файл состояния:\n{STATE_FILE}\n\n"
             f"Python: {sys.version.split()[0]}\n"
-            f"Платформа: {sys.platform}"
+            f"Платформа: {sys.platform}",
+#            icon="question"   # что бы убрать системный звук (иконки info)
         )
 
 
