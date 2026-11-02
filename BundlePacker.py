@@ -12,7 +12,7 @@ import sys
 # ============================================================
 APP_NAME    = "BundlePackerApp"
 APP_TITLE   = "Сопоставление кодов маркировки"
-APP_VERSION = "1.2.5"
+APP_VERSION = "1.2.6"
 
 FONT_UI_BOLD  = ("Segoe UI", 10, "bold")
 FONT_MONO_BIG = ("Consolas", 12)
@@ -113,11 +113,24 @@ class BundlePackerApp:
                   command=self.undo_last).pack(side=tk.LEFT, padx=5)
         tk.Button(frame_btn, text="Сбросить всё", width=15,
                   command=self.reset_all).pack(side=tk.LEFT, padx=5)
-        tk.Button(frame_btn, text="Завершить и показать таблицу", width=28,
-                  command=self.finish).pack(side=tk.LEFT, padx=5)
-        tk.Button(frame_btn, text="О программе", width=15,
-                  command=self.show_about).pack(side=tk.LEFT, padx=5)
-
+        tk.Button(
+            frame_btn,
+            text="Завершить и показать таблицу",
+            width=28,
+            command=self.finish,
+            bg=COLOR_PRIMARY,
+            fg="white",
+            activebackground="#0059b3",
+            activeforeground="white",
+            font=FONT_UI_BOLD,
+            relief=tk.RAISED,
+            bd=2,
+            cursor="hand2",
+        ).pack(side=tk.LEFT, padx=(20, 5))
+        
+#        tk.Button(frame_btn, text="О программе", width=15,
+#                  command=self.show_about).pack(side=tk.LEFT, padx=5)
+#
 #        # --- Журнал ввода (что уже отсканировано) ---
 #        tk.Label(root, text="Журнал ввода:", font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10)
 #        self.log = tk.Text(root, height=8, font=("Consolas", 10))
@@ -172,9 +185,10 @@ class BundlePackerApp:
             self.hint_var.set("Сканируйте код товара, входящего в набор")
 
     def _build_menu(self):
-        """Меню в заголовке окна: Настройки → Проверять дубликаты."""
+        """Меню в заголовке окна: Настройки → ..., Справка → О программе."""
         menubar = tk.Menu(self.root)
 
+        # --- Настройки ---
         settings_menu = tk.Menu(menubar, tearoff=0)
         self.dup_var = tk.BooleanVar(value=self.check_duplicates)
         settings_menu.add_checkbutton(
@@ -183,6 +197,14 @@ class BundlePackerApp:
             command=self.on_toggle_duplicates,
         )
         menubar.add_cascade(label="Настройки", menu=settings_menu)
+
+        # --- Справка ---
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(
+            label="О программе",
+            command=self.show_about,
+        )
+        menubar.add_cascade(label="Справка", menu=help_menu)
 
         self.root.config(menu=menubar)
 
