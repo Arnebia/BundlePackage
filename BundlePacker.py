@@ -12,7 +12,7 @@ import sys
 # ============================================================
 APP_NAME    = "BundlePackerApp"
 APP_TITLE   = "Сопоставление кодов маркировки"
-APP_VERSION = "1.2.7"
+APP_VERSION = "1.2.8"
 
 FONT_UI_BOLD  = ("Segoe UI", 10, "bold")
 FONT_MONO_BIG = ("Consolas", 12)
@@ -222,6 +222,21 @@ class BundlePackerApp:
         """Меню в заголовке окна: Настройки → ..., Справка → О программе."""
         menubar = tk.Menu(self.root)
 
+        # --- Файл ---
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(
+            label="Открыть CSV…",
+            command=self.open_csv,
+            accelerator="Ctrl+O",
+        )
+        file_menu.add_separator()
+        file_menu.add_command(
+            label="Выход",
+            command=self.on_close,
+            accelerator="Alt+F4",
+        )
+        menubar.add_cascade(label="Файл", menu=file_menu)
+
         # --- Настройки ---
         settings_menu = tk.Menu(menubar, tearoff=0)
         self.dup_var = tk.BooleanVar(value=self.check_duplicates)
@@ -241,6 +256,9 @@ class BundlePackerApp:
         menubar.add_cascade(label="Справка", menu=help_menu)
 
         self.root.config(menu=menubar)
+
+        # Горячая клавиша Ctrl+O
+        self.root.bind("<Control-o>", lambda e: self.open_csv())
 
     def on_toggle_duplicates(self):
         """Переключение настройки проверки дубликатов."""
@@ -416,6 +434,139 @@ class BundlePackerApp:
 
         self.sync_items_spin()      # Блокировка кол-ва товаров в наборе
         ResultWindow(self.root, self.rows)
+
+    # ---------- Открытие CSV ----------
+    def open_csv(self):
+        """Открыть ранее сохранённый CSV и загрузить его как наборы."""
+        # 1. Защита от потери текущих данных
+        has_data = bool(self.rows) or self.current_set is not None
+        if has_data:
+            if not messagebox.askyesno(
+                "Открыть CSV",
+                "Текущие данные будут заменены содержимым файла.\n\n"
+                "Продолжить?",
+            ):
+                return
+
+        # 2. Выбор файла
+        path = filedialog.askopenfilename(
+            title="Открыть CSV с результатами",
+            filetypes=[("CSV", "*.csv"), ("Все файлы", "*.*")],
+        )
+        if not path:
+            return
+
+        # 3. Чтение
+        try:
+            with open(path, "r", newline="", encoding="utf-8-sig") as f:
+                reader = csv.reader(f, delimiter=";")
+                raw_rows = list(reader)
+        except OSError as e:
+            messagebox.showerror(
+                "Не удалось открыть файл",
+                f"{path}\n\n{e}",
+            )
+            return
+        except UnicodeDecodeError:
+            # на случай, если файл сохранён в cp1251 (например, старым Excel)
+            try:
+                with open(path, "r", newline="", encoding="cp1251") as f:
+                    reader = csv.reader(f, delimiter=";")
+                    raw_rows = list(reader)
+            except Exception as e:
+                messagebox.showerror(
+                    "Не удалось прочитать файл",
+                    f"{path}\n\nПохоже, кодировка не UTF-8 и не CP1251.\n{e}",
+                )
+                return
+
+        if not raw_rows:
+            messagebox.showinfo("Пустой файл", "Файл не содержит данных.")
+            return
+
+        # 4. Разбор строк: пропускаем заголовок, если он есть
+        header = raw_rows[0]
+        start_idx = 0
+        if header and len(header) >= 2:
+            h0 = header[0].strip().lower()
+            h1 = header[1].strip().lower()
+            if h0.startswith("код") and "набор" in h1:
+                start_idx = 1  # это наш заголовок «Код;Код набора»
+
+        new_rows = []
+        seen_items = set()
+        seen_sets = set()
+        skipped_invalid = 0
+        skipped_duplicates = 0
+        skipped_self = 0
+
+        for row in raw_rows[start_idx:]:
+            if not row or all(not c.strip() for c in row):
+                continue
+            if len(row) < 2:
+                skipped_invalid += 1
+                continue
+            item = row[0].strip()
+            setcode = row[1].strip()
+            if not item or not setcode:
+                skipped_invalid += 1
+                continue
+            # обрезка как в on_enter — на случай «длинных» кодов из других источников
+            if len(item) > self.CODE_LENGTH:
+                item = item[: self.CODE_LENGTH]
+            if len(setcode) > self.CODE_LENGTH:
+                setcode = setcode[: self.CODE_LENGTH]
+            # код товара не может совпадать с кодом набора
+            if item == setcode:
+                skipped_self += 1
+                continue
+            # дубликаты (учитываем настройку)
+            if self.check_duplicates:
+                if item in seen_items or setcode in seen_items or item in seen_sets:
+                    skipped_duplicates += 1
+                    continue
+            new_rows.append((item, setcode))
+            seen_items.add(item)
+            seen_sets.add(setcode)
+
+        if not new_rows:
+            messagebox.showwarning(
+                "Нет данных для загрузки",
+                "В файле не найдено ни одной корректной пары «товар;набор».\n\n"
+                f"Пропущено строк: {skipped_invalid + skipped_duplicates + skipped_self}",
+            )
+            return
+
+        # 5. Применяем: заменяем rows, сбрасываем текущий набор и счётчики
+        self.rows = new_rows
+        self.current_set = None
+        self.current_items = []
+        self.set_counter = len({s for _, s in new_rows})
+
+        # 6. Перерисовываем UI
+        self.rebuild_log()
+        self.sync_items_spin()
+        self.update_status()
+
+        # 7. Итог
+        summary = (
+            f"Файл: {os.path.basename(path)}\n\n"
+            f"Загружено пар: {len(new_rows)}\n"
+            f"Наборов: {self.set_counter}"
+        )
+        if skipped_invalid:
+            summary += f"\nПропущено некорректных строк: {skipped_invalid}"
+        if skipped_duplicates:
+            summary += f"\nПропущено дубликатов: {skipped_duplicates}"
+        if skipped_self:
+            summary += f"\nПропущено строк, где товар = набор: {skipped_self}"
+        messagebox.showinfo("CSV загружен", summary)
+
+        self.log_line(
+            f"[открыт CSV] {os.path.basename(path)}: "
+            f"{len(new_rows)} пар, {self.set_counter} наборов",
+            tag="hint",
+        )
 
     # ---------- Сохранение / загрузка состояния ----------
     def save_state(self):
@@ -600,6 +751,9 @@ class ResultWindow:
         for item, setcode in rows:
             self.tree.insert("", tk.END, values=(item, setcode))
 
+        # --- Контекстное меню и горячие клавиши для копирования ---
+        self._build_context_menu()
+
         btn_frame = tk.Frame(self.win)
         btn_frame.pack(pady=10)
         tk.Button(btn_frame, text="Сохранить в CSV", width=20,
@@ -632,6 +786,118 @@ class ResultWindow:
 
         return result
 
+    # ---------- Контекстное меню и копирование ----------
+    def _build_context_menu(self):
+        """Создать контекстное меню для Treeview и повесить обработчики."""
+        self.ctx_menu = tk.Menu(self.win, tearoff=0)
+        self.ctx_menu.add_command(
+            label="Копировать выделенное",
+            command=self.copy_selected,
+            accelerator="Ctrl+C",
+        )
+        self.ctx_menu.add_command(
+            label="Копировать всё",
+            command=self.copy_all,
+        )
+        self.ctx_menu.add_separator()
+        self.ctx_menu.add_command(
+            label="Выделить всё",
+            command=self.select_all,
+            accelerator="Ctrl+A",
+        )
+
+        # Правый клик — показать меню
+        self.tree.bind("<Button-3>", self._show_context_menu)
+        # Горячие клавиши
+        self.tree.bind("<Control-c>", lambda e: self.copy_selected())
+        self.tree.bind("<Control-a>", lambda e: self.select_all())
+        # Ctrl+Insert — классическая альтернатива копирования в Windows
+        self.tree.bind("<Control-Insert>", lambda e: self.copy_selected())
+
+        # Перехват правого клика и на дочернем окне (на случай фокуса вне Treeview)
+        self.win.bind("<Control-c>", lambda e: self.copy_selected())
+
+    def _show_context_menu(self, event):
+        """Показать контекстное меню в позиции курсора."""
+        # Если кликнули по строке, которой нет в выделении — выделяем её
+        row_id = self.tree.identify_row(event.y)
+        if row_id and row_id not in self.tree.selection():
+            self.tree.selection_set(row_id)
+        try:
+            self.ctx_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.ctx_menu.grab_release()
+
+    def _rows_to_tsv(self, selection=None) -> str:
+        """
+        Собрать данные Treeview в TSV.
+        selection=None — все строки; иначе — только перечисленные iid.
+        Возвращает строку с '\\t' между колонками и '\\n' между строками.
+        """
+        if selection is None:
+            iids = self.tree.get_children("")
+        else:
+            # сохраняем порядок как в таблице, а не как пришло из selection()
+            all_iids = self.tree.get_children("")
+            sel_set = set(selection)
+            iids = [iid for iid in all_iids if iid in sel_set]
+
+        lines = []
+        for iid in iids:
+            values = self.tree.item(iid, "values")
+            # На всякий случай приводим к строкам и экранируем табы/переводы строк
+            safe = [
+                str(v).replace("\t", " ").replace("\r", " ").replace("\n", " ")
+                for v in values
+            ]
+            lines.append("\t".join(safe))
+        return "\n".join(lines)
+
+    def copy_selected(self):
+        """Скопировать выделенные строки в буфер обмена как таблицу (TSV)."""
+        selection = self.tree.selection()
+        if not selection:
+            messagebox.showinfo(
+                "Нечего копировать",
+                "Выделите одну или несколько строк в таблице.",
+                parent=self.win,
+            )
+            return
+        data = self._rows_to_tsv(selection)
+        self._copy_to_clipboard(data, f"Скопировано строк: {len(selection)}")
+
+    def copy_all(self):
+        """Скопировать всю таблицу в буфер обмена как таблицу (TSV)."""
+        iids = self.tree.get_children("")
+        if not iids:
+            messagebox.showinfo(
+                "Нечего копировать",
+                "Таблица пуста.",
+                parent=self.win,
+            )
+            return
+        data = self._rows_to_tsv(None)
+        self._copy_to_clipboard(data, f"Скопировано строк: {len(iids)}")
+
+    def select_all(self):
+        """Выделить все строки в таблице."""
+        self.tree.selection_set(self.tree.get_children(""))
+
+    def _copy_to_clipboard(self, text: str, status_msg: str):
+        """Положить text в буфер обмена и кратко сообщить в заголовке окна."""
+        if not text:
+            return
+        self.win.clipboard_clear()
+        self.win.clipboard_append(text)
+        # Важно: clipboard в Tk живёт, пока живёт процесс. Для надёжности
+        # можно обновлять через update, но Tkinter сам держит буфер.
+        self.win.update_idletasks()
+
+        # Кратковременная обратная связь: меняем заголовок окна на 1.5 секунды
+        old_title = self.win.title()
+        self.win.title(f"✔ {status_msg}")
+        self.win.after(1500, lambda: self.win.title(old_title))
+    # ------------------------------------------------
 
 #    def save_csv(self):
 #        path = filedialog.asksaveasfilename(
